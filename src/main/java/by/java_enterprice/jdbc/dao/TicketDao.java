@@ -5,21 +5,22 @@ import by.java_enterprice.jdbc.entity.Ticket;
 import by.java_enterprice.jdbc.exception.DaoException;
 import by.java_enterprice.jdbc.utils.ConnectionManager;
 
+import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
-public class TicketDao {
+public class TicketDao implements Dao<Long, Ticket> {
     private final static TicketDao INSTANCE = new TicketDao();
+    private final FlightDao flightDao = FlightDao.getInstance();
 
     private final static String SAVE_SQL = """
                                             INSERT INTO ticket
-                                            (passport_no, passenger_name, flight_id, seat_no, cost) 
+                                            (passport_no, passenger_name, flight_id, seat_no, cost)
                                             VALUES (?, ?, ?, ?, ?)
                                             """;
 
@@ -29,11 +30,14 @@ public class TicketDao {
                                             """;
 
     private final static String FIND_ALL_SQL = """
-                                            SELECT id, passport_no, passenger_name, flight_id, seat_no, cost
-                                            FROM ticket
+                                            SELECT t.id, t.passport_no, t.passenger_name, t.flight_id, t.seat_no, t.cost,
+                                                    f.flight_no, f.departure_date, f.departure_airport_code, f.arrival_date,
+                                                    f.arrival_airport_code, f.aircraft_id, f.status
+                                            FROM ticket t
+                                            JOIN flight f on f.id = t.flight_id
                                             """;
 
-    private final static String GET_BY_ID_SQL = """
+    private final static String FIND_BY_ID_SQL = """
                                                 SELECT id, passport_no, passenger_name, flight_id, seat_no, cost
                                                 FROM ticket
                                                 WHERE id = ?
@@ -83,7 +87,7 @@ public class TicketDao {
 
             while (result.next()) {
                 tickets.add(
-                        buildTicket(result)
+                        buildTicket(result, connection)
                 );
             }
 
@@ -102,7 +106,7 @@ public class TicketDao {
 
             while (result.next()) {
                 tickets.add(
-                        buildTicket(result)
+                        buildTicket(result, connection)
                 );
             }
 
@@ -112,24 +116,15 @@ public class TicketDao {
         }
     }
 
-
-
-    public Optional<Ticket> getById(Long id) {
+    public Optional<Ticket> findById(Long id) {
         try(var connection = ConnectionManager.get();
-            var statement = connection.prepareStatement(GET_BY_ID_SQL)) {
+            var statement = connection.prepareStatement(FIND_BY_ID_SQL)) {
             statement.setLong(1, id);
             var result = statement.executeQuery();
 
             Ticket ticket = null;
             if (result.next()) {
-                ticket = new Ticket(
-                        result.getLong("id"),
-                        result.getString("passport_no"),
-                        result.getString("passenger_name"),
-                        result.getString("seat_no"),
-                        result.getLong("flight_id"),
-                        result.getBigDecimal("cost")
-                );
+                ticket = buildTicket(result, connection);
             }
             return Optional.ofNullable(ticket);
         } catch (SQLException e) {
@@ -142,7 +137,7 @@ public class TicketDao {
             var statement = connection.prepareStatement(SAVE_SQL, Statement.RETURN_GENERATED_KEYS)) {
             statement.setString(1, ticket.getPassportNo());
             statement.setString(2, ticket.getPassengerName());
-            statement.setLong(3, ticket.getFlightId());
+            statement.setLong(3, ticket.getFlight().getId());
             statement.setString(4, ticket.getSeatNo());
             statement.setBigDecimal(5, ticket.getCost());
 
@@ -163,7 +158,7 @@ public class TicketDao {
         try(var statement = connection.prepareStatement(UPDATE_SQL)) {
             statement.setString(1, ticket.getPassportNo());
             statement.setString(2, ticket.getPassengerName());
-            statement.setLong(3, ticket.getFlightId());
+            statement.setLong(3, ticket.getFlight().getId());
             statement.setString(4, ticket.getSeatNo());
             statement.setBigDecimal(5, ticket.getCost());
             statement.setLong(6, ticket.getId());
@@ -184,13 +179,16 @@ public class TicketDao {
         }
     }
 
-    private Ticket buildTicket(ResultSet result) throws SQLException {
+    private Ticket buildTicket(ResultSet result, Connection connection) throws SQLException {
         return new Ticket(
                 result.getLong("id"),
                 result.getString("passport_no"),
                 result.getString("passenger_name"),
                 result.getString("seat_no"),
-                result.getLong("flight_id"),
+                flightDao.findById(
+                        result.getLong("flight_id"),
+                        result.getStatement().getConnection()
+                ).orElse(null),
                 result.getBigDecimal("cost")
         );
     }

@@ -7,9 +7,9 @@ import by.java_enterprice.jdbc.entity.Ticket;
 import java.sql.SQLException;
 
 public class JdbcRunner {
-    public static void main(String[] args) throws SQLException {
+    public static void main(String[] args) {
         var ticketDao = TicketDao.getInstance();
-        Ticket ticket = ticketDao.getById(5L).get();
+        Ticket ticket = ticketDao.findById(5L).get();
         System.out.println(ticket);
         ticket.setSeatNo("55D");
         System.out.println(ticketDao.update(ticket));
